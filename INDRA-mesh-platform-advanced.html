@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>INDRA — 3x3 Mesh Weather &amp; Hazard Prediction Platform</title>
+<style>
+  :root {
+    --bg: #060a11;
+    --panel: #0e141f;
+    --card: #131b28;
+    --card-hi: #17202f;
+    --border: #263143;
+    --border-soft: #1c2635;
+
+    --idle: #22c55e;
+    --idle-dim: #16a34a;
+    --watch: #f5a623;
+    --alert: #ef4444;
+
+    --wind: #22d3ee;
+    --pressure: #a78bfa;
+    --rain: #38bdf8;
+    --dry: #fb923c;
+
+    --text: #e8ecf3;
+    --text-dim: #8592a6;
+    --text-faint: #4b5768;
+
+    --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scrollbar-color: var(--border) var(--bg); }
+  body {
+    background:
+      radial-gradient(circle at 15% 0%, rgba(56,189,248,0.06), transparent 45%),
+      radial-gradient(circle at 85% 10%, rgba(167,139,250,0.05), transparent 40%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    padding: 20px 16px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  .wrap { width: 100%; max-width: 1180px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- Header ---------- */
+  header { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; margin-bottom: 4px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--wind); }
+  h1 { font-size: 25px; font-weight: 800; color: var(--text); }
+  h1 span { color: var(--wind); }
+  .subtitle { color: var(--text-dim); font-size: 13px; max-width: 640px; line-height: 1.5; }
+
+  .mode-tabs { display: flex; gap: 8px; background: var(--panel); border: 1px solid var(--border); padding: 5px; border-radius: 30px; margin-top: 6px; }
+  .tab-btn { background: transparent; border: none; color: var(--text-dim); padding: 8px 18px; border-radius: 20px; font-weight: 700; font-size: 12.5px; cursor: pointer; transition: all .15s; font-family: var(--sans); }
+  .tab-btn.active { background: var(--wind); color: #04141a; }
+  .tab-btn:not(.active):hover { color: var(--text); }
+
+  /* ---------- Transport / time control bar ---------- */
+  .transport {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .transport-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .now-block { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+  .now-title { font-weight: 800; font-size: 14.5px; }
+  .now-desc { font-size: 11.5px; color: var(--text-dim); }
+
+  .transport-controls { display: flex; align-items: center; gap: 8px; }
+  .tbtn {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; transition: all .15s;
+  }
+  .tbtn:hover { background: var(--card-hi); border-color: var(--wind); }
+  .tbtn.play { width: auto; padding: 0 14px; gap: 6px; font-weight: 700; font-size: 12px; }
+  .tbtn.play.playing { background: rgba(34,197,94,0.15); border-color: var(--idle); color: var(--idle); }
+
+  select.speed {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0 8px; height: 34px; font-family: var(--mono); font-size: 11.5px; cursor: pointer;
+  }
+
+  .clock {
+    background: #000; color: var(--wind); font-family: var(--mono); font-size: 13px;
+    padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); white-space: nowrap;
+  }
+
+  .scrub-row { display: flex; align-items: center; gap: 10px; }
+  input[type=range].scrubber { flex: 1; accent-color: var(--wind); height: 5px; cursor: pointer; }
+  .day-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .day-tab {
+    font-family: var(--mono); font-size: 10.5px; background: var(--card); border: 1px solid var(--border);
+    color: var(--text-dim); padding: 4px 8px; border-radius: 6px; cursor: pointer; transition: all .15s;
+  }
+  .day-tab.current { border-color: var(--wind); color: var(--wind); }
+  .day-tab:hover { color: var(--text); }
+
+  .spacing-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+  .spacing-row input[type=range] { width: 140px; accent-color: var(--pressure); height: 4px; }
+  .spacing-row b { color: var(--text); font-family: var(--mono); }
+
+  /* ---------- Grid ---------- */
+  .grid-mesh {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .node-card {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    transition: box-shadow .3s, border-color .3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .node-card.idle { border-color: rgba(34,197,94,0.28); }
+  .node-card.watch { border-color: var(--watch); box-shadow: 0 0 14px rgba(245,166,35,0.15); }
+  .node-card.alert { border-color: var(--alert); box-shadow: 0 0 22px rgba(239,68,68,0.28); animation: pulse 1.1s infinite alternate; }
+  @keyframes pulse {
+    from { box-shadow: 0 0 8px rgba(239,68,68,0.18); }
+    to   { box-shadow: 0 0 20px rgba(239,68,68,0.5); }
+  }
+
+  .node-head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .node-id-block { display: flex; align-items: center; gap: 7px; }
+  .node-id { font-size: 16px; font-weight: 800; font-family: var(--mono); }
+  .alt-badge { font-size: 10px; background: #0d1420; border: 1px solid var(--border-soft); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-family: var(--mono); }
+  .status-pill { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; padding: 3px 8px; border-radius: 10px; }
+  .idle .status-pill { background: var(--idle); color: #052e14; }
+  .watch .status-pill { background: var(--watch); color: #3a2100; }
+  .alert .status-pill { background: var(--alert); color: #400a0a; }
+
+  /* compass */
+  .compass-wrap { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .compass { width: 30px; height: 30px; }
+  .compass-arrow { transform-origin: 15px 15px; transition: transform .4s; }
+  .wind-lbl { font-family: var(--mono); font-size: 9px; color: var(--wind); }
+
+  .readout-row { display: flex; justify-content: space-between; gap: 6px; }
+  .readout-row .compass-wrap { flex-shrink: 0; }
+
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; flex: 1; }
+  .metric { display: flex; flex-direction: column; }
+  .metric .k { font-size: 9.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
+  .metric .v { font-family: var(--mono); font-size: 13.5px; font-weight: 700; }
+  .metric.temp .v { color: #fca5a5; }
+  .metric.hum .v { color: var(--rain); }
+  .metric.pressure .v { color: var(--pressure); }
+  .metric.rain .v { color: #7dd3fc; }
+
+  .sandbox-controls { display: none; flex-direction: column; gap: 6px; background: #0b1119; border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px; }
+  .sandbox .sandbox-controls { display: flex; }
+  .sandbox-row { display: flex; flex-direction: column; gap: 1px; }
+  .sandbox-row .lbl { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); }
+  .sandbox-row .lbl b { color: var(--text); font-family: var(--mono); }
+  input[type=range] { accent-color: var(--wind); width: 100%; height: 4px; cursor: pointer; }
+  select.disaster-select {
+    width: 100%; background: #0b1119; color: var(--text); border: 1px solid var(--border-soft);
+    border-radius: 4px; padding: 4px 6px; font-size: 10.5px;
+  }
+
+  .metric-toggle { display: flex; gap: 3px; }
+  .mtoggle-btn {
+    flex: 1; font-size: 9.5px; font-family: var(--mono); background: #0b1119; border: 1px solid var(--border-soft);
+    color: var(--text-dim); padding: 3px 0; border-radius: 5px; cursor: pointer;
+  }
+  .mtoggle-btn.active { border-color: var(--wind); color: var(--wind); background: rgba(34,211,238,0.08); }
+
+  .graph-box { background: #0a0f17; border-radius: 6px; padding: 4px; height: 34px; border: 1px solid var(--border-soft); }
+  svg.sparkline { width: 100%; height: 100%; display: block; }
+  svg.sparkline path { fill: none; stroke-width: 1.8; }
+
+  .predict-line {
+    font-size: 10.5px; font-family: var(--mono); padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border-soft);
+    background: #0a0f17; color: var(--text-dim); line-height: 1.4;
+  }
+  .predict-line.rain { color: var(--rain); border-color: rgba(56,189,248,0.3); }
+  .predict-line.dry { color: var(--dry); border-color: rgba(251,146,60,0.3); }
+  .predict-line.active { color: var(--alert); border-color: rgba(239,68,68,0.35); }
+  .predict-line.watch-active { color: var(--watch); border-color: rgba(245,166,35,0.35); }
+
+  .week-strip { display: flex; gap: 3px; }
+  .week-block { flex: 1; height: 14px; border-radius: 3px; background: var(--border-soft); position: relative; cursor: default; }
+  .week-block.today::after { content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--wind); }
+
+  .freq-line { display: flex; gap: 8px; font-size: 9.5px; font-family: var(--mono); color: var(--text-dim); justify-content: space-between; }
+  .freq-line span b { color: var(--text); }
+
+  /* ---------- Bottom panels ---------- */
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+  }
+  .panel-title { color: var(--wind); font-weight: 800; font-size: 12.5px; margin-bottom: 9px; display: flex; justify-content: space-between; align-items: center; }
+  .panel-title .btn-mini { font-size: 10px; }
+
+  .terminal { background: #000; height: 150px; border-radius: 6px; padding: 8px; overflow-y: auto; font-family: var(--mono); font-size: 11px; color: #34d399; line-height: 1.6; }
+  .terminal::-webkit-scrollbar { width: 6px; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .predict-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+  .predict-row { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; padding: 6px 8px; border-radius: 6px; background: #0a0f17; border: 1px solid var(--border-soft); }
+  .predict-row .pid { font-family: var(--mono); font-weight: 700; width: 40px; }
+  .predict-row .ptext { flex: 1; color: var(--text-dim); font-size: 11px; padding: 0 6px; }
+  .predict-row .peta { font-family: var(--mono); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .predict-row.k-rain .peta { color: var(--rain); }
+  .predict-row.k-dry .peta { color: var(--dry); }
+  .predict-row.k-active .peta { color: var(--alert); }
+  .predict-row.k-none .peta { color: var(--text-faint); }
+
+  .windmap-svg { width: 100%; height: 220px; }
+
+  .stats-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  .stats-table th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border-soft); font-size: 9.5px; text-transform: uppercase; }
+  .stats-table td { padding: 5px 6px; border-bottom: 1px solid var(--border-soft); font-family: var(--mono); }
+  .stats-table tr:last-child td { border-bottom: none; }
+  .bar-cell { display: flex; height: 8px; width: 90px; border-radius: 3px; overflow: hidden; background: var(--border-soft); }
+  .bar-idle { background: var(--idle); } .bar-watch { background: var(--watch); } .bar-alert { background: var(--alert); }
+
+  .rules-list { color: var(--text-dim); line-height: 1.7; padding-left: 16px; font-size: 11.5px; }
+  .rules-list li { margin-bottom: 2px; }
+  .rules-list strong { color: var(--text); }
+
+  .btn {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: var(--sans);
+  }
+  .btn:hover { background: var(--card-hi); border-color: var(--wind); }
+
+  @media (max-width: 980px) {
+    .grid-mesh { grid-template-columns: 1fr 1fr; }
+    .bottom-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .grid-mesh { grid-template-columns: 1fr; }
+    .transport-top { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">SMART INDIA HACKATHON 2026 · SIH26178 · DISASTER MANAGEMENT</div>
+    <h1>INDRA <span>·</span> 3×3 Mesh Weather &amp; Hazard Prediction Platform</h1>
+    <p class="subtitle">Nine altitude-aware nodes model temperature, humidity, wind, pressure and rainfall across a 7-day cycle, cascade hazard states through wind-vector-aware neighbor propagation, and forecast incoming rain or drying wind before it arrives.</p>
+    <div class="mode-tabs">
+      <button class="tab-btn active" id="btn-mode-demo" onclick="setMode('demo')">7-Day Simulation</button>
+      <button class="tab-btn" id="btn-mode-sandbox" onclick="setMode('sandbox')">Interactive Sandbox</button>
+    </div>
+  </header>
+
+  <!-- Transport / timeline controls -->
+  <div class="transport" id="transport">
+    <div class="transport-top">
+      <div class="now-block">
+        <div class="now-title" id="now-title">Day 1 — Arid Drought &amp; Extreme Heatwave</div>
+        <div class="now-desc" id="now-desc">High heat, low humidity. Easterly wind.</div>
+      </div>
+      <div class="transport-controls">
+        <button class="tbtn" id="btn-back" onclick="stepHour(-1)" title="Back 1 hour">◀</button>
+        <button class="tbtn play" id="btn-play" onclick="togglePlay()">▶ Play</button>
+        <button class="tbtn" id="btn-fwd" onclick="stepHour(1)" title="Forward 1 hour">▶</button>
+        <select class="speed" id="speed-select" onchange="setSpeed(this.value)">
+          <option value="2000">0.5×</option>
+          <option value="1000" selected>1×</option>
+          <option value="500">2×</option>
+          <option value="250">4×</option>
+        </select>
+        <div class="clock" id="clock">Day 1 · 00:00</div>
+      </div>
+    </div>
+
+    <div class="scrub-row">
+      <input type="range" class="scrubber" id="scrubber" min="0" max="167" value="0" oninput="onScrub(this.value)">
+    </div>
+
+    <div class="scrub-row" style="justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+      <div class="day-tabs" id="day-tabs"></div>
+      <div class="spacing-row">
+        <span>Node spacing</span>
+        <input type="range" id="spacing-slider" min="0.2" max="8" step="0.1" value="2" oninput="setSpacing(this.value)">
+        <b id="spacing-val">2.0 km</b>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3x3 Mesh -->
+  <div class="grid-mesh" id="mesh-grid"></div>
+
+  <!-- Bottom panels -->
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-title">Telemetry Stream</div>
+      <div class="terminal" id="terminal"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Predictive Alerts — Rain &amp; Dry-Wind Forecast <span class="btn-mini" id="predict-count"></span></div>
+      <div class="predict-list" id="predict-list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Wind &amp; Precipitation Field</div>
+      <svg class="windmap-svg" id="windmap"></svg>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Node Reliability — Elapsed-Week Frequency <button class="btn" onclick="resetAll()">Reset</button></div>
+      <table class="stats-table">
+        <thead><tr><th>Node</th><th>Idle/Watch/Alert</th><th>Rain evt</th><th>Dry evt</th></tr></thead>
+        <tbody id="stats-body"></tbody>
+      </table>
+      <ul class="rules-list" style="margin-top:10px;">
+        <li><strong>Rain:</strong> propagates only in the direction the wind is blowing, and never uphill.</li>
+        <li><strong>Landslide:</strong> cascades downward from high-altitude nodes regardless of wind.</li>
+        <li><strong>Wildfire:</strong> thermal updraft climbs from low altitude toward higher nodes.</li>
+        <li><strong>Dry wind:</strong> flagged as an advisory only — does not raise alert state.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* =========================================================
+   CONFIG & STATIC NODE LAYOUT
+   ========================================================= */
+const NODE_DEFS = [
+  { r:0, c:0, id:'a11', alt:100 },
+  { r:0, c:1, id:'a12', alt:220 },
+  { r:0, c:2, id:'a13', alt:350 },
+  { r:1, c:0, id:'a21', alt:140 },
+  { r:1, c:1, id:'a22', alt:280 },
+  { r:1, c:2, id:'a23', alt:420 },
+  { r:2, c:0, id:'a31', alt:180 },
+  { r:2, c:1, id:'a32', alt:310 },
+  { r:2, c:2, id:'a33', alt:520 }
+];
+const TOTAL_HOURS = 168;
+
+const SCENARIOS = [
+  { day:1, title:'Arid Drought & Extreme Heatwave', desc:'High heat, low humidity. Easterly wind.', heatTarget:42, humTarget:22, windDir:90,  windSpeed:10, pressureBase:1016, disaster:'none' },
+  { day:2, title:'Coastal Monsoon (Non-Flooding)',   desc:'Heavy rain at low altitude only. SW onshore wind.', heatTarget:24, humTarget:78, windDir:225, windSpeed:28, pressureBase:999,  disaster:'none' },
+  { day:3, title:'Mountain Cloudburst & Landslide',  desc:'Torrential rain at A33 triggers a downslope landslide.', heatTarget:20, humTarget:92, windDir:200, windSpeed:35, pressureBase:992,  disaster:'landslide' },
+  { day:4, title:'Heat Thermal-Updraft Wildfire Risk', desc:'Low-altitude heat rises up-slope, forest nodes flagged.', heatTarget:39, humTarget:18, windDir:45,  windSpeed:14, pressureBase:1013, disaster:'wildfire' },
+  { day:5, title:'Moderate Humid Rain (Baseline)',   desc:'Light rain, mild humidity, nominal operation.', heatTarget:26, humTarget:68, windDir:160, windSpeed:18, pressureBase:1008, disaster:'none' },
+  { day:6, title:'Lowland Flash Flood',              desc:'River overflow at low elevation. Highlands unaffected.', heatTarget:22, humTarget:95, windDir:250, windSpeed:30, pressureBase:995,  disaster:'flood' },
+  { day:7, title:'Stabilization',                    desc:'System returns to nominal equilibrium across the mesh.', heatTarget:25, humTarget:50, windDir:120, windSpeed:12, pressureBase:1013, disaster:'none' }
+];
+
+const METRICS = {
+  temp:      { label:'Temp',  unit:'°C',   min:5,   max:50,   color:'#fca5a5' },
+  hum:       { label:'Hum',   unit:'%',    min:0,   max:100,  color:'#38bdf8' },
+  windSpeed: { label:'Wind',  unit:'km/h', min:0,   max:60,   color:'#22d3ee' },
+  pressure:  { label:'Pres',  unit:'hPa',  min:980, max:1020, color:'#a78bfa' },
+  rainRate:  { label:'Rain',  unit:'mm/h', min:0,   max:60,   color:'#7dd3fc' }
+};
+
+/* =========================================================
+   DETERMINISTIC PSEUDO-RANDOM (reproducible, no state)
+   ========================================================= */
+function rnd(seed) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1; // -1..1
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* =========================================================
+   GEOMETRY HELPERS
+   ========================================================= */
+function isNeighbor(a, b) {
+  const rd = Math.abs(a.r - b.r), cd = Math.abs(a.c - b.c);
+  return rd <= 1 && cd <= 1 && !(rd === 0 && cd === 0);
+}
+function gridDistance(a, b) { return Math.hypot(a.r - b.r, a.c - b.c); }
+function bearingBetween(a, b) {
+  const dr = b.r - a.r, dc = b.c - a.c;
+  return (Math.atan2(dc, -dr) * 180 / Math.PI + 360) % 360;
+}
+function angDiff(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+function windAligned(src, target, tolerance) {
+  tolerance = tolerance === undefined ? 55 : tolerance;
+  return angDiff(src.windDir, bearingBetween(src, target)) <= tolerance;
+}
+function compassOf(deg) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}
+function blockedByAltitude(src, target) {
+  if (src.disaster === 'landslide') return !(target.alt < src.alt);
+  if (src.disaster === 'flood')     return target.alt > src.alt;
+  if (src.disaster === 'wildfire')  return target.alt < src.alt;
+  return target.alt > src.alt; // generic rain / heat / wind watch does not climb
+}
+
+/* =========================================================
+   TIMELINE GENERATION (pure function of hour -> deterministic)
+   ========================================================= */
+function generatePhysical(nodeDef, idx, hour) {
+  const day = Math.floor(hour / 24);
+  const hourOfDay = hour % 24;
+  const sc = SCENARIOS[day];
+  const isDay = hourOfDay >= 6 && hourOfDay < 18;
+  const seed = hour * 131 + idx * 977;
+  const n1 = rnd(seed + 11), n2 = rnd(seed + 22), n3 = rnd(seed + 33), n4 = rnd(seed + 44), n5 = rnd(seed + 55);
+
+  const diurnalPhase = ((hourOfDay - 9) / 24) * Math.PI * 2;
+  const tempDiurnal = 7 * Math.sin(diurnalPhase);
+
+  let temp = sc.heatTarget + tempDiurnal - (nodeDef.alt / 100) * 0.6 + n1 * 2.2;
+  let hum = sc.humTarget - tempDiurnal * 1.1 + n2 * 6;
+  hum = clamp(hum, 4, 100);
+  let windSpeed = Math.max(0, sc.windSpeed + (nodeDef.alt / 100) * 0.7 + n3 * 5);
+  let windDir = ((sc.windDir + n4 * 20 + Math.sin((hour + idx * 7) / 16) * 12) % 360 + 360) % 360;
+  let pressure = sc.pressureBase - (nodeDef.alt / 100) * 1.15 + n5 * 1.3;
+  let rainRate = hum > 72 ? clamp((hum - 72) * 1.15 + n2 * 2.5, 0, 70) : 0;
+
+  let disaster = 'none';
+  if (sc.disaster === 'landslide' && nodeDef.id === 'a33' && hum > 84) disaster = 'landslide';
+  else if (sc.disaster === 'flood' && nodeDef.alt < 150 && hum > 84) disaster = 'flood';
+  else if (sc.disaster === 'wildfire' && nodeDef.alt > 400 && isDay && temp > 35.5) disaster = 'wildfire';
+
+  return { id: nodeDef.id, r: nodeDef.r, c: nodeDef.c, alt: nodeDef.alt, temp, hum, windSpeed, windDir, pressure, rainRate, disaster };
+}
+
+/* Derives threshold state + wind/altitude-aware propagation + dry-wind advisory
+   for a snapshot array (used both when precomputing the 7-day timeline and
+   when recomputing live in the Sandbox after a manual parameter change). */
+function deriveState(snap) {
+  snap.forEach(n => {
+    const tempAlert = n.temp > 37, humAlert = n.hum > 85, rainAlert = n.rainRate > 16, disasterAlert = n.disaster !== 'none';
+    const tempWatch = n.temp > 32.5 && n.temp <= 37;
+    const humWatch = n.hum > 68 && n.hum <= 85;
+    const rainWatch = n.rainRate > 4 && n.rainRate <= 16;
+    const windWatch = n.windSpeed > 34;
+
+    let rawState = 0, reason = null;
+    if (tempAlert || humAlert || rainAlert || disasterAlert) { rawState = 2; reason = disasterAlert ? n.disaster : (humAlert ? 'humidity' : (rainAlert ? 'rain' : 'heat')); }
+    else if (tempWatch || humWatch || rainWatch || windWatch) { rawState = 1; reason = humWatch ? 'humidity' : (rainWatch ? 'rain' : (tempWatch ? 'heat' : 'wind')); }
+
+    n.rawState = rawState; n.state = rawState; n.watchReason = reason; n.watchSource = null; n.dryIncoming = false;
+  });
+
+  // Wind + altitude aware neighbor propagation (upgrade idle -> watch only)
+  const sources = snap.filter(s => s.rawState === 2);
+  sources.forEach(src => {
+    snap.forEach(target => {
+      if (target === src || target.state !== 0) return;
+      if (!isNeighbor(src, target)) return;
+      if (blockedByAltitude(src, target)) return;
+      if (src.disaster === 'none' && !windAligned(src, target)) return;
+      target.state = 1;
+      target.watchReason = src.disaster !== 'none' ? src.disaster : 'wind-advection';
+      target.watchSource = src.id;
+    });
+  });
+
+  // Dry-wind advisory flag (informational, not a state change)
+  snap.forEach(target => {
+    if (target.hum < 28) return;
+    let flagged = false;
+    snap.forEach(src => {
+      if (src === target || src.hum >= 25) return;
+      if (!isNeighbor(src, target)) return;
+      if (!windAligned(src, target, 50)) return;
+      flagged = true;
+    });
+    target.dryIncoming = flagged;
+  });
+
+  return snap;
+}
+
+function buildTimeline() {
+  const timeline = [];
+  for (let h = 0; h < TOTAL_HOURS; h++) {
+    const snap = NODE_DEFS.map((nd, i) => generatePhysical(nd, i, h));
+    deriveState(snap);
+    timeline.push(snap);
+  }
+  return timeline;
+}
+
+const TIMELINE = buildTimeline();
+
+/* =========================================================
+   APP STATE
+   ========================================================= */
+let currentMode = 'demo';
+let currentHour = 0;
+let playing = false;
+let playTimer = null;
+let playSpeedMs = 1000;
+let spacingKm = 2.0;
+let cardMetric = {}; NODE_DEFS.forEach(n => cardMetric[n.id] = 'temp');
+let sandboxOverride = {}; // id -> partial snapshot overrides in sandbox mode
+let termLogged = new Set();
+
+function liveSnapshot() {
+  const base = TIMELINE[currentHour];
+  if (currentMode !== 'sandbox') return base;
+  const merged = base.map(s => Object.assign({}, s, sandboxOverride[s.id] || {}));
+  return deriveState(merged); // recompute thresholds + propagation live from manual overrides
+}
+
+/* =========================================================
+   MODE / TRANSPORT
+   ========================================================= */
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('btn-mode-demo').className = mode === 'demo' ? 'tab-btn active' : 'tab-btn';
+  document.getElementById('btn-mode-sandbox').className = mode === 'sandbox' ? 'tab-btn active' : 'tab-btn';
+  document.getElementById('transport').style.opacity = mode === 'sandbox' ? '0.5' : '1';
+  document.getElementById('transport').style.pointerEvents = mode === 'sandbox' ? 'none' : 'auto';
+  if (mode === 'sandbox') {
+    pausePlay();
+    if (Object.keys(sandboxOverride).length === 0) {
+      TIMELINE[currentHour].forEach(s => { sandboxOverride[s.id] = { temp: s.temp, hum: s.hum, windSpeed: s.windSpeed, windDir: s.windDir, pressure: s.pressure, rainRate: s.rainRate, disaster: s.disaster }; });
+    }
+  }
+  renderAll();
+}
+
+function togglePlay() {
+  if (currentMode === 'sandbox') return;
+  playing ? pausePlay() : startPlay();
+}
+function startPlay() {
+  playing = true;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '⏸ Pause'; btn.classList.add('playing');
+  clearInterval(playTimer);
+  playTimer = setInterval(() => {
+    currentHour = (currentHour + 1) % TOTAL_HOURS;
+    renderAll();
+  }, playSpeedMs);
+}
+function pausePlay() {
+  playing = false;
+  clearInterval(playTimer);
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play'; btn.classList.remove('playing');
+}
+function setSpeed(v) {
+  playSpeedMs = parseInt(v, 10);
+  if (playing) startPlay();
+}
+function stepHour(delta) {
+  pausePlay();
+  currentHour = clamp(currentHour + delta, 0, TOTAL_HOURS - 1);
+  renderAll();
+}
+function onScrub(v) {
+  pausePlay();
+  currentHour = parseInt(v, 10);
+  renderAll();
+}
+function jumpToDay(dayIdx) {
+  pausePlay();
+  currentHour = dayIdx * 24;
+  renderAll();
+}
+function setSpacing(v) {
+  spacingKm = parseFloat(v);
+  document.getElementById('spacing-val').textContent = spacingKm.toFixed(1) + ' km';
+  renderPredictions();
+}
+function resetAll() {
+  pausePlay();
+  currentHour = 0;
+  sandboxOverride = {};
+  termLogged = new Set();
+  document.getElementById('terminal').innerHTML = '';
+  renderAll();
+}
+
+/* =========================================================
+   RENDER: transport bar
+   ========================================================= */
+function renderTransport() {
+  const day = Math.floor(currentHour / 24), hourOfDay = currentHour % 24;
+  const sc = SCENARIOS[day];
+  document.getElementById('now-title').textContent = 'Day ' + sc.day + ' — ' + sc.title;
+  document.getElementById('now-desc').textContent = sc.desc;
+  document.getElementById('clock').textContent = 'Day ' + sc.day + ' · ' + String(hourOfDay).padStart(2, '0') + ':00';
+  document.getElementById('scrubber').value = currentHour;
+
+  const tabs = document.getElementById('day-tabs');
+  if (!tabs.dataset.built) {
+    tabs.innerHTML = SCENARIOS.map((s, i) => '<button class="day-tab" onclick="jumpToDay(' + i + ')" id="daytab-' + i + '">Day ' + s.day + '</button>').join('');
+    tabs.dataset.built = '1';
+  }
+  SCENARIOS.forEach((s, i) => {
+    document.getElementById('daytab-' + i).classList.toggle('current', i === day);
+  });
+}
+
+/* =========================================================
+   RENDER: node cards
+   ========================================================= */
+function stateClass(state) { return state === 2 ? 'alert' : state === 1 ? 'watch' : 'idle'; }
+function stateLabel(state) { return state === 2 ? 'Alert' : state === 1 ? 'Watch' : 'Idle'; }
+
+function renderGrid() {
+  const container = document.getElementById('mesh-grid');
+  const snap = liveSnapshot();
+  const isSandbox = currentMode === 'sandbox';
+  container.innerHTML = '';
+
+  snap.forEach((node, idx) => {
+    const sc = stateClass(node.state);
+    const metric = cardMetric[node.id];
+
+    const card = document.createElement('div');
+    card.className = 'node-card ' + sc + (isSandbox ? ' sandbox' : '');
+    card.innerHTML = `
+      <div class="node-head">
+        <div class="node-id-block">
+          <span class="node-id">${node.id.toUpperCase()}</span>
+          <span class="alt-badge">${node.alt}m</span>
+        </div>
+        <span class="status-pill">${stateLabel(node.state)}</span>
+      </div>
+
+      <div class="readout-row">
+        <div class="metrics-grid">
+          <div class="metric temp"><span class="k">Temp</span><span class="v">${node.temp.toFixed(1)}°C</span></div>
+          <div class="metric hum"><span class="k">Humidity</span><span class="v">${node.hum.toFixed(0)}%</span></div>
+          <div class="metric pressure"><span class="k">Pressure</span><span class="v">${node.pressure.toFixed(0)}hPa</span></div>
+          <div class="metric rain"><span class="k">Rain</span><span class="v">${node.rainRate.toFixed(1)}mm/h</span></div>
+        </div>
+        <div class="compass-wrap" title="Wind ${node.windDir.toFixed(0)}° (${compassOf(node.windDir)}) @ ${node.windSpeed.toFixed(0)} km/h">
+          <svg class="compass" viewBox="0 0 30 30">
+            <circle cx="15" cy="15" r="13" fill="none" stroke="var(--border-soft)" stroke-width="1.5"/>
+            <path class="compass-arrow" d="M15 4 L18.5 15 L15 12.5 L11.5 15 Z" fill="var(--wind)" style="transform: rotate(${node.windDir}deg)"/>
+          </svg>
+          <span class="wind-lbl">${node.windSpeed.toFixed(0)}kmh ${compassOf(node.windDir)}</span>
+        </div>
+      </div>
+
+      <div class="sandbox-controls">
+        <div class="sandbox-row">
+          <div class="lbl"><span>Temp</span><b id="lv-temp-${node.id}">${node.temp.toFixed(1)}°C</b></div>
+          <input type="range" min="10" max="50" step="0.5" value="${node.temp}" oninput="updateParam('${node.id}','temp',this.value)">
+        </div>
+        <div class="sandbox-row">
+          <div class="lbl"><span>Humidity</span><b id="lv-hum-${node.id}">${node.hum.toFixed(0)}%</b></div>
+          <input type="range" min="5" max="100" step="1" value="${node.hum}" oninput="updateParam('${node.id}','hum',this.value)">
+        </div>
+        <div class="sandbox-row">
+          <div class="lbl"><span>Wind speed</span><b id="lv-windSpeed-${node.id}">${node.windSpeed.toFixed(0)}km/h</b></div>
+          <input type="range" min="0" max="60" step="1" value="${node.windSpeed}" oninput="updateParam('${node.id}','windSpeed',this.value)">
+        </div>
+        <div class="sandbox-row">
+          <div class="lbl"><span>Wind dir</span><b id="lv-windDir-${node.id}">${node.windDir.toFixed(0)}° ${compassOf(node.windDir)}</b></div>
+          <input type="range" min="0" max="359" step="1" value="${node.windDir}" oninput="updateParam('${node.id}','windDir',this.value)">
+        </div>
+        <div class="sandbox-row">
+          <div class="lbl"><span>Pressure</span><b id="lv-pressure-${node.id}">${node.pressure.toFixed(0)}hPa</b></div>
+          <input type="range" min="980" max="1025" step="1" value="${node.pressure}" oninput="updateParam('${node.id}','pressure',this.value)">
+        </div>
+        <select class="disaster-select" onchange="updateParam('${node.id}','disaster',this.value)">
+          <option value="none" ${node.disaster === 'none' ? 'selected' : ''}>Disaster: none</option>
+          <option value="landslide" ${node.disaster === 'landslide' ? 'selected' : ''}>Landslide / mudslide</option>
+          <option value="flood" ${node.disaster === 'flood' ? 'selected' : ''}>Flash flood</option>
+          <option value="wildfire" ${node.disaster === 'wildfire' ? 'selected' : ''}>Wildfire / updraft</option>
+        </select>
+      </div>
+
+      <div class="metric-toggle">
+        ${Object.keys(METRICS).map(m => `<button class="mtoggle-btn ${m === metric ? 'active' : ''}" onclick="setCardMetric('${node.id}','${m}')">${METRICS[m].label}</button>`).join('')}
+      </div>
+      <div class="graph-box"><svg class="sparkline" id="svg-${node.id}"></svg></div>
+
+      <div class="predict-line" id="predict-mini-${node.id}"></div>
+
+      <div class="week-strip" id="week-${node.id}"></div>
+    `;
+    container.appendChild(card);
+    drawSparkline(node.id, metric, idx);
+    drawWeekStrip(node.id, idx);
+  });
+
+  renderPredictMini(snap);
+}
+
+function updateParam(id, field, val) {
+  if (!sandboxOverride[id]) sandboxOverride[id] = {};
+  sandboxOverride[id][field] = field === 'disaster' ? val : parseFloat(val);
+  const labelEl = document.getElementById('lv-' + field + '-' + id);
+  if (labelEl) {
+    const v = sandboxOverride[id][field];
+    labelEl.textContent =
+      field === 'temp' ? v.toFixed(1) + '°C' :
+      field === 'hum' ? v.toFixed(0) + '%' :
+      field === 'windSpeed' ? v.toFixed(0) + 'km/h' :
+      field === 'windDir' ? v.toFixed(0) + '° ' + compassOf(v) :
+      field === 'pressure' ? v.toFixed(0) + 'hPa' : v;
+  }
+  renderGrid();
+  renderPredictions();
+  renderWindmap();
+  logTerminal();
+}
+
+function setCardMetric(id, m) {
+  cardMetric[id] = m;
+  renderGrid();
+}
+
+/* =========================================================
+   RENDER: sparkline (uses TIMELINE history; sandbox shows flat override)
+   ========================================================= */
+function drawSparkline(id, metric, idx) {
+  const svg = document.getElementById('svg-' + id);
+  if (!svg) return;
+  const cfg = METRICS[metric];
+  const width = 300, height = 30;
+
+  let values;
+  if (currentMode === 'sandbox') {
+    const v = (sandboxOverride[id] && sandboxOverride[id][metric] !== undefined) ? sandboxOverride[id][metric] : TIMELINE[currentHour][idx][metric];
+    values = Array(16).fill(v);
+  } else {
+    const from = Math.max(0, currentHour - 23);
+    values = [];
+    for (let h = from; h <= currentHour; h++) values.push(TIMELINE[h][idx][metric]);
+  }
+
+  const pts = values.map((val, i) => {
+    const x = values.length > 1 ? (i / (values.length - 1)) * width : width / 2;
+    const y = height - ((clamp(val, cfg.min, cfg.max) - cfg.min) / (cfg.max - cfg.min)) * height;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+
+  svg.innerHTML = '<polyline points="' + pts + '" fill="none" stroke="' + cfg.color + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+}
+
+/* =========================================================
+   RENDER: weekly state-history strip per node
+   ========================================================= */
+function drawWeekStrip(id, idx) {
+  const el = document.getElementById('week-' + id);
+  if (!el) return;
+  const day = Math.floor(currentHour / 24);
+  let html = '';
+  for (let d = 0; d < 7; d++) {
+    let cls = 'week-block';
+    let color = 'var(--border-soft)';
+    let title = 'Day ' + (d + 1) + ': pending';
+    if (d < day || (d === day)) {
+      const endHour = d < day ? (d * 24 + 23) : currentHour;
+      let peak = 0;
+      for (let h = d * 24; h <= endHour; h++) peak = Math.max(peak, TIMELINE[h][idx].state);
+      color = peak === 2 ? 'var(--alert)' : peak === 1 ? 'var(--watch)' : 'var(--idle)';
+      title = 'Day ' + (d + 1) + ': peak ' + stateLabel(peak);
+    }
+    if (d === day) cls += ' today';
+    html += '<div class="' + cls + '" style="background:' + color + '" title="' + title + '"></div>';
+  }
+  el.innerHTML = html;
+}
+
+/* =========================================================
+   PREDICTIONS (computed live from current-hour snapshot only)
+   ========================================================= */
+function computePredictions() {
+  const snap = liveSnapshot();
+  return snap.map(target => {
+    if (target.state === 2) return { id: target.id, kind: 'active', text: 'Active: ' + (target.watchReason || 'threshold') + ' alert', eta: -1 };
+    if (target.state === 1) return { id: target.id, kind: 'watch-active', text: 'Watch: ' + (target.watchReason || 'incoming') + ' from ' + (target.watchSource || 'threshold'), eta: -1 };
+
+    let candidates = [];
+    snap.forEach(src => {
+      if (src === target) return;
+      if (!isNeighbor(src, target)) return;
+      const dist = gridDistance(src, target);
+      if ((src.rainRate > 3 || src.disaster !== 'none') && !blockedByAltitude(src, target) && (src.disaster !== 'none' || windAligned(src, target))) {
+        const eta = src.windSpeed > 0.5 ? (dist * spacingKm / src.windSpeed) * 60 : Infinity;
+        candidates.push({ kind: 'rain', source: src.id, eta });
+      } else if (src.hum < 25 && windAligned(src, target, 50)) {
+        const eta = src.windSpeed > 0.5 ? (dist * spacingKm / src.windSpeed) * 60 : Infinity;
+        candidates.push({ kind: 'dry', source: src.id, eta });
+      }
+    });
+    candidates.sort((a, b) => a.eta - b.eta);
+    const best = candidates[0];
+    if (!best || !isFinite(best.eta)) return { id: target.id, kind: 'none', text: 'No incoming system detected', eta: Infinity };
+    const mins = Math.round(best.eta);
+    const etaText = mins < 60 ? '~' + mins + ' min' : '~' + (mins / 60).toFixed(1) + ' hr';
+    return {
+      id: target.id, kind: best.kind, eta: best.eta,
+      text: (best.kind === 'rain' ? 'Rain likely from ' : 'Dry wind incoming from ') + best.source.toUpperCase() + ' in ' + etaText
+    };
+  });
+}
+
+function renderPredictions() {
+  const preds = computePredictions();
+  const order = { active: 0, 'watch-active': 1, rain: 2, dry: 3, none: 4 };
+  const sorted = preds.slice().sort((a, b) => (order[a.kind] - order[b.kind]) || (a.eta - b.eta));
+
+  document.getElementById('predict-list').innerHTML = sorted.map(p => `
+    <div class="predict-row k-${p.kind}">
+      <span class="pid">${p.id.toUpperCase()}</span>
+      <span class="ptext">${p.text}</span>
+      <span class="peta">${p.kind === 'active' ? 'NOW' : p.kind === 'watch-active' ? 'NOW' : p.kind === 'none' ? '—' : (p.eta < 60 ? Math.round(p.eta) + 'm' : (p.eta/60).toFixed(1) + 'h')}</span>
+    </div>
+  `).join('');
+
+  const incoming = preds.filter(p => p.kind === 'rain' || p.kind === 'dry').length;
+  const active = preds.filter(p => p.kind === 'active' || p.kind === 'watch-active').length;
+  document.getElementById('predict-count').textContent = active + ' active · ' + incoming + ' incoming';
+}
+
+function renderPredictMini(snap) {
+  const preds = computePredictions();
+  preds.forEach(p => {
+    const el = document.getElementById('predict-mini-' + p.id);
+    if (!el) return;
+    el.className = 'predict-line ' + p.kind;
+    el.textContent = p.text;
+  });
+}
+
+/* =========================================================
+   WIND MAP (SVG)
+   ========================================================= */
+function renderWindmap() {
+  const svg = document.getElementById('windmap');
+  const snap = liveSnapshot();
+  const W = 340, H = 220, pad = 40;
+  const cellX = (W - pad * 2) / 2, cellY = (H - pad * 2) / 2;
+
+  let elems = '';
+  snap.forEach(node => {
+    const cx = pad + node.c * cellX;
+    const cy = pad + node.r * cellY;
+    const rainOpacity = clamp(node.rainRate / 40, 0, 0.55);
+    const stateColor = node.state === 2 ? '#ef4444' : node.state === 1 ? '#f5a623' : '#22c55e';
+    const arrowLen = 12 + node.windSpeed * 0.5;
+    const rad = node.windDir * Math.PI / 180;
+    const dx = Math.sin(rad) * arrowLen, dy = -Math.cos(rad) * arrowLen;
+
+    elems += `<circle cx="${cx}" cy="${cy}" r="22" fill="rgba(56,189,248,${rainOpacity})" />`;
+    elems += `<circle cx="${cx}" cy="${cy}" r="15" fill="#0d1420" stroke="${stateColor}" stroke-width="2.5" />`;
+    elems += `<line x1="${cx}" y1="${cy}" x2="${cx + dx}" y2="${cy + dy}" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow)" />`;
+    elems += `<text x="${cx}" y="${cy + 32}" text-anchor="middle" font-size="10" font-family="monospace" fill="#8592a6">${node.id.toUpperCase()}</text>`;
+  });
+
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrow" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#22d3ee" />
+      </marker>
+    </defs>
+    ${elems}
+  `;
+}
+
+/* =========================================================
+   STATS / RELIABILITY PANEL
+   ========================================================= */
+function renderStats() {
+  const upto = currentHour;
+  const rows = NODE_DEFS.map((nd, idx) => {
+    let idleC = 0, watchC = 0, alertC = 0, rainEvt = 0, dryEvt = 0;
+    let prevRain = false, prevDry = false;
+    for (let h = 0; h <= upto; h++) {
+      const s = TIMELINE[h][idx];
+      if (s.state === 0) idleC++; else if (s.state === 1) watchC++; else alertC++;
+      const rainNow = s.rainRate > 4;
+      if (rainNow && !prevRain) rainEvt++;
+      prevRain = rainNow;
+      if (s.dryIncoming && !prevDry) dryEvt++;
+      prevDry = s.dryIncoming;
+    }
+    const total = upto + 1;
+    return { id: nd.id, idleP: idleC / total * 100, watchP: watchC / total * 100, alertP: alertC / total * 100, rainEvt, dryEvt };
+  });
+
+  document.getElementById('stats-body').innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.id.toUpperCase()}</td>
+      <td>
+        <div class="bar-cell">
+          <div class="bar-idle" style="width:${r.idleP}%"></div>
+          <div class="bar-watch" style="width:${r.watchP}%"></div>
+          <div class="bar-alert" style="width:${r.alertP}%"></div>
+        </div>
+      </td>
+      <td>${r.rainEvt}</td>
+      <td>${r.dryEvt}</td>
+    </tr>
+  `).join('');
+}
+
+/* =========================================================
+   TERMINAL LOG
+   ========================================================= */
+function logTerminal() {
+  const term = document.getElementById('terminal');
+  const snap = liveSnapshot();
+  const time = 'D' + (Math.floor(currentHour / 24) + 1) + ' ' + String(currentHour % 24).padStart(2, '0') + ':00';
+  const summary = snap.map(n => {
+    const tag = n.state === 2 ? '<span style="color:#ef4444">ALT</span>' : n.state === 1 ? '<span style="color:#f5a623">WCH</span>' : '<span style="color:#34d399">IDL</span>';
+    return n.id.toUpperCase() + ':' + tag;
+  }).join(' ');
+  term.innerHTML += '<div>[' + time + '] ' + summary + '</div>';
+  term.scrollTop = term.scrollHeight;
+}
+
+/* =========================================================
+   MASTER RENDER
+   ========================================================= */
+function renderAll() {
+  renderTransport();
+  renderGrid();
+  renderPredictions();
+  renderWindmap();
+  renderStats();
+  logTerminal();
+}
+
+renderAll();
+</script>
+</body>
+</html>
